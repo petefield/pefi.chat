@@ -1,0 +1,68 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-app-service-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run chat and SignalR checks
+        run: dotnet run --project tests/PefiChat.Tests/PefiChat.Tests.csproj --configuration Release
+
+      - name: Publish application
+        run: dotnet publish PefiChat.csproj --configuration Release --output "$RUNNER_TEMP/pefi-chat-publish"
+
+      - name: Upload published application
+        uses: actions/upload-artifact@v4
+        with:
+          name: pefi-chat-publish
+          path: ${{ runner.temp }}/pefi-chat-publish/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download published application
+        uses: actions/download-artifact@v4
+        with:
+          name: pefi-chat-publish
+          path: ${{ runner.temp }}/pefi-chat-publish
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: ${{ runner.temp }}/pefi-chat-publish
+          startup-command: dotnet PefiChat.dll

@@ -1,0 +1,49 @@
+@page "/"
+@inject SignInProviders Providers
+
+<PageTitle>Pefi Chat</PageTitle>
+
+<main class="shell">
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">A LITTLE SPACE TO CONNECT</p>
+            <h1>Pefi Chat</h1>
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <form action="/logout" method="post">
+                    <AntiforgeryToken />
+                    <button class="secondary" type="submit">Sign out</button>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    <AuthorizeView>
+        <Authorized>
+            <PefiChat.Client.ChatRoom @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
+        </Authorized>
+        <NotAuthorized>
+            <section class="welcome">
+                <p class="eyebrow">WELCOME IN</p>
+                <h2>Good conversations start here.</h2>
+                <p>Join the shared room or have a private conversation with someone online.</p>
+                <div class="signin-actions">
+                    @if (Providers.Google)
+                    {
+                        <a class="button" href="/login/google">Continue with Google</a>
+                    }
+                    @if (Providers.Microsoft)
+                    {
+                        <a class="button secondary" href="/login/microsoft">Continue with Microsoft</a>
+                    }
+                </div>
+                @if (!Providers.Google && !Providers.Microsoft)
+                {
+                    <p class="notice">Sign-in is not configured yet. See the README for setup instructions.</p>
+                }
+                <p class="muted">Messages are kept in memory and disappear when the server restarts.</p>
+            </section>
+        </NotAuthorized>
+    </AuthorizeView>
+</main>

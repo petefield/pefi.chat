@@ -1,0 +1,207 @@
+@namespace PefiChat.Client
+@implements IAsyncDisposable
+@inject NavigationManager Navigation
+@inject ILogger<ChatRoom> Logger
+
+@if (user is not null)
+{
+    <div class="chat-layout">
+        <aside class="sidebar">
+            <div class="identity">
+                <span class="avatar">@Initial(user.Name)</span>
+                <div><strong>@user.Name</strong><small>Signed in</small></div>
+            </div>
+            <p class="section-label">CONVERSATIONS</p>
+            <button type="button" class="conversation @(selectedUserId is null ? "active" : "")"
+                    @onclick="() => SelectUserAsync(null, null)">
+                <span class="conversation-icon">#</span>
+                <span><strong>Everyone</strong><small>Shared room</small></span>
+            </button>
+            <p class="section-label">ONLINE <span>@online.Count</span></p>
+            @if (online.Count == 0)
+            {
+                <p class="empty-users">No one else is online yet.</p>
+            }
+            @foreach (var person in online)
+            {
+                <button type="button" class="conversation @(selectedUserId == person.Id ? "active" : "")"
+                        @onclick="() => SelectUserAsync(person.Id, person.Name)">
+                    <span class="person-avatar">@Initial(person.Name)</span>
+                    <span><strong>@person.Name</strong><small>Direct message · @person.Id[..6]</small></span>
+                    <span class="online-dot" aria-label="Online"></span>
+                </button>
+            }
+        </aside>
+        <section class="chat-panel" aria-label="Chat conversation">
+            <div class="chat-heading">
+                <div>
+                    <p class="eyebrow">@(selectedUserId is null ? "SHARED ROOM" : "DIRECT MESSAGE")</p>
+                    <h2>@(selectedUserName ?? "Everyone")</h2>
+                </div>
+                <span class="live"><span class="online-dot"></span> @(connected ? "Live" : "Offline")</span>
+            </div>
+            <div class="messages" role="log" aria-live="polite">
+                @if (messages.Count == 0)
+                {
+                    <div class="empty-chat">
+                        <span class="empty-icon">✳</span>
+                        <h3>Start the conversation</h3>
+                        <p>Say hello! Messages in this conversation will appear here.</p>
+                    </div>
+                }
+                @foreach (var message in messages)
+                {
+                    <article class="message @(message.SenderId == user.Id ? "own" : "")">
+                        <div class="message-meta">
+                            <strong>@message.SenderName</strong>
+                            <time datetime="@message.SentAt.ToString("O")">@message.SentAt.ToLocalTime().ToString("HH:mm")</time>
+                        </div>
+                        <p>@message.Text</p>
+                    </article>
+                }
+            </div>
+            <form class="composer" @onsubmit="SendAsync" @onsubmit:preventDefault>
+                <label class="sr-only" for="message">Message</label>
+                <input id="message" maxlength="@ChatLimits.MaximumMessageLength" @bind="text"
+                       @bind:event="oninput" placeholder="Write a message..." autocomplete="off" disabled="@(!connected)" />
+                <button type="submit" disabled="@(!connected)">Send <span aria-hidden="true">↗</span></button>
+            </form>
+            <p class="chat-footnote">Messages are temporary and will disappear when the server restarts.</p>
+        </section>
+    </div>
+}
+else if (error is null)
+{
+    <p class="notice" role="status">Connecting to chat…</p>
+}
+
+@if (error is not null)
+{
+    <div class="connection-error" role="alert">
+        <p>@error</p>
+        @if (connection?.State == HubConnectionState.Disconnected)
+        {
+            <button type="button" @onclick="ConnectAsync">Reconnect</button>
+        }
+    </div>
+}
+
+@code {
+    private HubConnection? connection;
+    private ChatUser? user;
+    private IReadOnlyList<ChatUser> online = [];
+    private IReadOnlyList<ChatMessage> messages = [];
+    private string? selectedUserId;
+    private string? selectedUserName;
+    private string text = "";
+    private string? error;
+    private bool connected;
+    private bool disposed;
+    private int refreshVersion;
+
+    protected override async Task OnInitializedAsync()
+    {
+        connection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/chat-hub"))
+            .WithAutomaticReconnect()
+            .Build();
+        connection.On("Changed", () => { _ = InvokeAsync(RefreshAsync); });
+        connection.Reconnecting += exception => InvokeAsync(() =>
+        {
+            Logger.LogWarning(exception, "Chat connection lost; reconnecting.");
+            connected = false;
+            error = "Connection lost. Trying to reconnect…";
+            StateHasChanged();
+        });
+        connection.Reconnected += _ => InvokeAsync(async () =>
+        {
+            connected = true;
+            error = null;
+            await RefreshAsync();
+        });
+        connection.Closed += exception => InvokeAsync(() =>
+        {
+            connected = false;
+            error = "Chat is disconnected. Reconnect or refresh the page.";
+            if (exception is not null) Logger.LogWarning(exception, "Chat connection closed.");
+            StateHasChanged();
+        });
+        await ConnectAsync();
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (connection is null || connection.State != HubConnectionState.Disconnected) return;
+        try
+        {
+            error = null;
+            await connection.StartAsync();
+            connected = true;
+            await RefreshAsync();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not connect to chat.");
+            connected = false;
+            error = "Could not connect to chat. Check your connection or sign in again.";
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (!connected || connection is null || disposed) return;
+        var version = ++refreshVersion;
+        var recipient = selectedUserId;
+        try
+        {
+            var snapshot = await connection.InvokeAsync<ChatSnapshot>("GetSnapshot", recipient);
+            if (version != refreshVersion || disposed) return;
+            user = snapshot.User;
+            online = snapshot.OnlineUsers;
+            messages = snapshot.Messages;
+            StateHasChanged();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not refresh chat.");
+            if (!disposed)
+            {
+                error = "Could not refresh chat. Please reconnect or refresh the page.";
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task SelectUserAsync(string? id, string? name)
+    {
+        selectedUserId = id;
+        selectedUserName = name;
+        messages = [];
+        error = null;
+        await RefreshAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (!connected || connection is null) return;
+        var message = text;
+        try
+        {
+            error = await connection.InvokeAsync<string?>("SendMessage", selectedUserId, message);
+            if (error is null && text == message) text = "";
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not send chat message.");
+            error = "Could not send the message. Please try again.";
+        }
+    }
+
+    private static string Initial(string name) => name.Trim()[..1].ToUpperInvariant();
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (connection is not null) await connection.DisposeAsync();
+    }
+}
