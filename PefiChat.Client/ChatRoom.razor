@@ -4,6 +4,7 @@
 @inject ILogger<ChatRoom> Logger
 @using Microsoft.AspNetCore.Components.Forms
 
+<div class="chat-app">
     <header class="topbar">
         <div class="brand">
             <span class="brand-mark" aria-hidden="true">
@@ -58,14 +59,14 @@
     <div class="chat-layout">
         <nav class="conversation-tabs" aria-label="Conversation types">
             <button type="button" class="conversation-tab @(!showDirectMessages ? "active" : "")"
-                    aria-pressed="@(!showDirectMessages)" @onclick="() => SelectTabAsync(false)">Rooms</button>
+                    aria-pressed="@(!showDirectMessages)" @onclick="() => SelectTabAsync(false)"><span class="tab-icon" aria-hidden="true">#</span> Rooms</button>
             <button type="button" class="conversation-tab @(showDirectMessages ? "active" : "")"
-                    aria-pressed="@showDirectMessages" @onclick="() => SelectTabAsync(true)">Direct messages</button>
+                    aria-pressed="@showDirectMessages" @onclick="() => SelectTabAsync(true)"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5h16v12H9l-5 3V5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 11h.01M12 11h.01M16 11h.01" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg> Direct messages</button>
         </nav>
         <aside class="sidebar">
             @if (!showDirectMessages)
             {
-                <p class="section-label">YOUR ROOMS</p>
+                <p class="section-label">Your rooms</p>
                 <button type="button" class="conversation active" aria-current="true"
                         @onclick="() => SelectUserAsync(null, null)">
                     <span class="conversation-icon">#</span>
@@ -74,7 +75,7 @@
             }
             else
             {
-                <p class="section-label">PEOPLE <span class="count">@users.Count</span></p>
+                <p class="section-label">People <span class="count">@users.Count</span></p>
                 @if (users.Count == 0)
                 {
                     <p class="empty-users">No other users have signed in yet.</p>
@@ -84,16 +85,18 @@
                     <button type="button" class="conversation @(selectedUserId == person.Id ? "active" : "")"
                             aria-current="@(selectedUserId == person.Id ? "true" : null)"
                             @onclick="() => SelectUserAsync(person.Id, person.Name)">
-                        @if (person.Picture is not null)
-                        {
-                            <img class="person-avatar" src="@PictureUrl(person.Picture)" alt="" />
-                        }
-                        else
-                        {
-                            <span class="person-avatar">@Initial(person.Name)</span>
-                        }
-                        <span><strong>@person.Name</strong><small>@(person.IsOnline ? "Online" : "Offline") · @person.Id[..6]</small></span>
-                        <span class="online-dot @(!person.IsOnline ? "is-offline" : "")" aria-label="@(person.IsOnline ? "Online" : "Offline")"></span>
+                        <span class="person-avatar-wrap">
+                            @if (person.Picture is not null)
+                            {
+                                <img class="person-avatar" src="@PictureUrl(person.Picture)" alt="" />
+                            }
+                            else
+                            {
+                                <span class="person-avatar">@Initial(person.Name)</span>
+                            }
+                            <span class="online-dot @(!person.IsOnline ? "is-offline" : "")" aria-label="@(person.IsOnline ? "Online" : "Offline")"></span>
+                        </span>
+                        <span><strong>@person.Name</strong><small>@(person.IsOnline ? "Online" : "Offline")</small></span>
                     </button>
                 }
             }
@@ -103,8 +106,8 @@
             {
                 <div class="chat-heading">
                     <div>
-                        <p class="eyebrow">DIRECT MESSAGES</p>
-                        <h2>Choose a conversation</h2>
+                        <h2>Messages</h2>
+                        <p class="heading-subtitle">Choose someone to start a conversation</p>
                     </div>
                     <span class="live @(!connected ? "offline" : "")"><span class="online-dot"></span> @(connected ? "Connected" : "Offline")</span>
                 </div>
@@ -120,8 +123,13 @@
             {
             <div class="chat-heading">
                 <div>
-                    <p class="eyebrow">@(selectedUserId is null ? "SHARED ROOM" : "DIRECT MESSAGE")</p>
-                    <h2>@(selectedUserName ?? "Everyone")</h2>
+                    <div class="heading-title">
+                        <span class="heading-icon" aria-hidden="true">@(selectedUserId is null ? "#" : "✦")</span>
+                        <div>
+                            <h2>@(selectedUserName ?? "Room")</h2>
+                            <p class="heading-subtitle">@(selectedUserId is null ? "The shared space for everyone" : "Direct message")</p>
+                        </div>
+                    </div>
                 </div>
                 <span class="live @(!connected ? "offline" : "")"><span class="online-dot"></span> @(connected ? "Connected" : "Offline")</span>
             </div>
@@ -137,25 +145,32 @@
                 @foreach (var message in messages)
                 {
                     <article class="message @(message.SenderId == user.Id ? "own" : "")">
-                        <div class="message-meta">
+                        <div class="message-avatar-wrap">
                             @if (message.SenderPicture is not null)
                             {
                                 <img class="message-avatar" src="@PictureUrl(message.SenderPicture)" alt="" />
                             }
-                            <strong>@message.SenderName</strong>
-                            <time datetime="@message.SentAt.ToString("O")">@message.SentAt.ToLocalTime().ToString("HH:mm")</time>
+                            else
+                            {
+                                <span class="message-avatar">@Initial(message.SenderName)</span>
+                            }
                         </div>
-                        <p>@message.Text</p>
+                        <div class="message-content">
+                            <div class="message-meta">
+                                <strong>@message.SenderName</strong>
+                                <time datetime="@message.SentAt.ToString("O")">@message.SentAt.ToLocalTime().ToString("HH:mm")</time>
+                            </div>
+                            <p>@message.Text</p>
+                        </div>
                     </article>
                 }
             </div>
             <form class="composer" @onsubmit="SendAsync" @onsubmit:preventDefault>
                 <label class="sr-only" for="message">Message</label>
                 <input id="message" maxlength="@ChatLimits.MaximumMessageLength" @bind="text"
-                       @bind:event="oninput" placeholder="Write a message..." autocomplete="off" disabled="@(!connected)" />
-                <button type="submit" disabled="@(!connected)">Send <span aria-hidden="true">↑</span></button>
+                       @bind:event="oninput" placeholder="@(selectedUserId is null ? "Message #Room..." : $"Message {selectedUserName}...")" autocomplete="off" disabled="@(!connected)" />
+                <button type="submit" disabled="@(!connected)" aria-label="Send message"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m3 11 18-8-7 18-3-7-8-3Zm8 3 10-11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </form>
-            <p class="chat-footnote">Messages are saved, so you can pick up the conversation later.</p>
             }
         </section>
     </div>
@@ -167,7 +182,7 @@ else if (error is null)
 
 @if (error is not null)
 {
-    <div class="connection-error" role="alert">
+    <div class="connection-error @(user is null ? "initial-error" : "")" role="alert">
         <p>@error</p>
         @if (connection?.State == HubConnectionState.Disconnected)
         {
@@ -175,6 +190,7 @@ else if (error is null)
         }
     </div>
 }
+</div>
 
 @code {
     [Parameter] public string LogoutToken { get; set; } = "";
