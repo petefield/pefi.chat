@@ -24,11 +24,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Run chat and SignalR checks
-        run: dotnet run --project tests/PefiChat.Tests/PefiChat.Tests.csproj --configuration Release
+      - name: Run client checks
+        run: dotnet run --project tests/PefiChat.Client.Tests/PefiChat.Client.Tests.csproj --configuration Release
+
+      - name: Run server and SignalR checks
+        run: dotnet run --project tests/PefiChat.Server.Tests/PefiChat.Server.Tests.csproj --configuration Release
 
       - name: Publish application
-        run: dotnet publish PefiChat.csproj --configuration Release --output "$RUNNER_TEMP/pefi-chat-publish"
+        run: dotnet publish src/PefiChat.Server/PefiChat.csproj --configuration Release --output "$RUNNER_TEMP/pefi-chat-publish"
 
       - name: Upload published application
         uses: actions/upload-artifact@v4

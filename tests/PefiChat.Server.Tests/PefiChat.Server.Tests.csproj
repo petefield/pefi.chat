@@ -6,6 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../PefiChat.csproj" />
+    <ProjectReference Include="../../src/PefiChat.Server/PefiChat.csproj" />
   </ItemGroup>
 </Project>

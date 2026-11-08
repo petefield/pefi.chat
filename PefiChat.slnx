@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PefiChat.Client/PefiChat.Client.csproj" />
+    <Project Path="src/PefiChat.Server/PefiChat.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PefiChat.Client.Tests/PefiChat.Client.Tests.csproj" />
+    <Project Path="tests/PefiChat.Server.Tests/PefiChat.Server.Tests.csproj" />
+  </Folder>
+</Solution>

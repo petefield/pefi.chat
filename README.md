@@ -2,6 +2,8 @@
 
 A small chat with a Blazor WebAssembly client, a .NET server, a shared room, and direct messages. The browser connects to an authenticated SignalR hub for real-time updates; sign-in and chat state remain on the server.
 
+The application projects are in `src/PefiChat.Client` and `src/PefiChat.Server`; their checks are in `tests/PefiChat.Client.Tests` and `tests/PefiChat.Server.Tests`. Run `dotnet build` from the repository root to build the solution.
+
 ## Run locally with Docker Compose
 
 Requires Docker and the Docker Compose plugin. For Microsoft sign-in, create a **separate development** Microsoft Entra app registration with a Web redirect URI of `http://localhost:8080/signin-microsoft`. Enable the account types you want to allow and create a client secret. Keep this registration separate from production.
@@ -41,22 +43,22 @@ Use the Microsoft identity platform's **Web** redirect URI type and enable the a
 Keep credentials out of source control. For local development, configure either or both providers with .NET user secrets:
 
 ```sh
-dotnet user-secrets set "Authentication:Google:ClientId" "YOUR_CLIENT_ID"
-dotnet user-secrets set "Authentication:Google:ClientSecret" "YOUR_CLIENT_SECRET"
-dotnet user-secrets set "Authentication:Microsoft:ClientId" "YOUR_CLIENT_ID"
-dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "YOUR_CLIENT_SECRET"
-dotnet user-secrets set "Cosmos:Endpoint" "https://YOUR_ACCOUNT.documents.azure.com:443/"
-dotnet user-secrets set "Cosmos:Database" "pefi-chat"
-dotnet user-secrets set "Profiles:BlobEndpoint" "https://YOUR_STORAGE_ACCOUNT.blob.core.windows.net/"
+dotnet user-secrets set --project src/PefiChat.Server "Authentication:Google:ClientId" "YOUR_CLIENT_ID"
+dotnet user-secrets set --project src/PefiChat.Server "Authentication:Google:ClientSecret" "YOUR_CLIENT_SECRET"
+dotnet user-secrets set --project src/PefiChat.Server "Authentication:Microsoft:ClientId" "YOUR_CLIENT_ID"
+dotnet user-secrets set --project src/PefiChat.Server "Authentication:Microsoft:ClientSecret" "YOUR_CLIENT_SECRET"
+dotnet user-secrets set --project src/PefiChat.Server "Cosmos:Endpoint" "https://YOUR_ACCOUNT.documents.azure.com:443/"
+dotnet user-secrets set --project src/PefiChat.Server "Cosmos:Database" "pefi-chat"
+dotnet user-secrets set --project src/PefiChat.Server "Profiles:BlobEndpoint" "https://YOUR_STORAGE_ACCOUNT.blob.core.windows.net/"
 az login
 dotnet dev-certs https --trust
-dotnet run --launch-profile https
+dotnet run --project src/PefiChat.Server --launch-profile https
 ```
 
 Visit `https://localhost:7268`. A provider appears on the sign-in screen only when both of its credentials are configured. For deployment, supply the same configuration keys through a secret manager or environment variables such as `Authentication__Google__ClientId`. Configure HTTPS and protect ASP.NET Core data-protection keys appropriately for the hosting environment.
 
-Run the chat behavior and SignalR integration checks with `dotnet run --project tests/PefiChat.Tests`.
-To include the Cosmos round-trip check, run `COSMOS_TEST_ENDPOINT=https://YOUR_ACCOUNT.documents.azure.com:443/ dotnet run --project tests/PefiChat.Tests` after `az login`. This writes and removes test records in `pefi-chat`.
+Run client contract checks with `dotnet run --project tests/PefiChat.Client.Tests` and the chat behavior and SignalR integration checks with `dotnet run --project tests/PefiChat.Server.Tests`.
+To include the Cosmos round-trip check, run `COSMOS_TEST_ENDPOINT=https://YOUR_ACCOUNT.documents.azure.com:443/ dotnet run --project tests/PefiChat.Server.Tests` after `az login`. This writes and removes test records in `pefi-chat`.
 To include the Blob round-trip check, also set `BLOB_TEST_ENDPOINT=https://YOUR_STORAGE_ACCOUNT.blob.core.windows.net/profiles`; this writes and removes a test image.
 
 ## Deploy to Azure App Service
