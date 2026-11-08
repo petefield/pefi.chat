@@ -1,0 +1,11 @@
+services:
+  chat:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+    env_file:
+      - path: .env.local
+        required: false

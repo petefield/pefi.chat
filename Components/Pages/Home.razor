@@ -1,48 +1,54 @@
 @page "/"
 @inject SignInProviders Providers
+@inject IHttpContextAccessor ContextAccessor
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 
 <PageTitle>Pefi Chat</PageTitle>
 
 <main class="shell">
+    <AuthorizeView>
+        <NotAuthorized>
     <header class="topbar">
-        <div>
-            <p class="eyebrow">A LITTLE SPACE TO CONNECT</p>
-            <h1>Pefi Chat</h1>
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M5 6.5h14v9H11l-4 3v-3H5v-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 10.9h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </span>
+            <div>
+                <h1>Pefi Chat</h1>
+                <p class="brand-subtitle">A little space to connect</p>
+            </div>
         </div>
-        <AuthorizeView>
-            <Authorized>
-                <form action="/logout" method="post">
-                    <AntiforgeryToken />
-                    <button class="secondary" type="submit">Sign out</button>
-                </form>
-            </Authorized>
-        </AuthorizeView>
     </header>
+        </NotAuthorized>
+    </AuthorizeView>
 
     <AuthorizeView>
         <Authorized>
-            <PefiChat.Client.ChatRoom @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
+            <PefiChat.Client.ChatRoom LogoutToken="@(Antiforgery.GetAndStoreTokens(ContextAccessor.HttpContext!).RequestToken!)" @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
         </Authorized>
         <NotAuthorized>
             <section class="welcome">
-                <p class="eyebrow">WELCOME IN</p>
-                <h2>Good conversations start here.</h2>
-                <p>Join the shared room or have a private conversation with someone online.</p>
+                <div class="welcome-icon" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" fill="none"><path d="M9 12.5h30v20H22l-8 5v-5H9v-20Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 20h16M16 25.5h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+                <p class="eyebrow">WELCOME TO PEFI CHAT</p>
+                <h2>A little closer,<br />one message at a time.</h2>
+                <p class="welcome-description">A quiet place for good conversations. Say hello to everyone, or catch up one-to-one.</p>
                 <div class="signin-actions">
                     @if (Providers.Google)
                     {
-                        <a class="button" href="/login/google">Continue with Google</a>
+                        <a class="button provider-button" href="/login/google"><span class="provider-icon" aria-hidden="true">G</span>Continue with Google <span class="button-arrow" aria-hidden="true">→</span></a>
                     }
                     @if (Providers.Microsoft)
                     {
-                        <a class="button secondary" href="/login/microsoft">Continue with Microsoft</a>
+                        <a class="button provider-button" href="/login/microsoft"><span class="microsoft-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Continue with Microsoft <span class="button-arrow" aria-hidden="true">→</span></a>
                     }
                 </div>
                 @if (!Providers.Google && !Providers.Microsoft)
                 {
                     <p class="notice">Sign-in is not configured yet. See the README for setup instructions.</p>
                 }
-                <p class="muted">Messages are kept in memory and disappear when the server restarts.</p>
+                <div class="welcome-note"><span aria-hidden="true">✦</span><p>Stay connected.<br /><span>Messages are saved for when you return.</span></p></div>
             </section>
         </NotAuthorized>
     </AuthorizeView>

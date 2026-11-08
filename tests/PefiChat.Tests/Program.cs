@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PefiChat.Chat;
 
-var store = new ChatStore(NullLogger<ChatStore>.Instance);
+var repository = new InMemoryChatRepository();
+var store = new ChatStore(repository, NullLogger<ChatStore>.Instance);
 var alice = new ChatUser("alice", "Alice");
 var bob = new ChatUser("bob", "Bob");
 var charlie = new ChatUser("charlie", "Charlie");
@@ -19,16 +20,16 @@ void Check(bool condition, string description)
 await store.ConnectAsync(aliceTab, alice, Notify);
 await store.ConnectAsync(aliceSecondTab, alice, Notify);
 await store.ConnectAsync(bobTab, bob, Notify);
-Check(store.OnlineUsers(bob.Id).Count == 1, "multiple tabs count as one online user");
+Check((await store.UsersAsync(bob.Id)).Count == 1, "multiple tabs count as one user");
 Check(notifications > 0, "presence changes notify connected clients");
 
 Check(await store.SendAsync(alice, null, " hello everyone ") is null, "shared message is accepted");
-Check(store.Messages(bob.Id, null).Single().Text == "hello everyone", "shared messages are visible and trimmed");
+Check((await store.MessagesAsync(bob.Id, null)).Single().Text == "hello everyone", "shared messages are visible and trimmed");
 Check(await store.SendAsync(alice, bob.Id, "private") is null, "direct message to online user is accepted");
-Check(store.Messages(bob.Id, alice.Id).Single().Text == "private", "direct message is visible to recipient");
-Check(store.Messages(charlie.Id, alice.Id).Count == 0, "direct messages are isolated from other conversations");
-Check(store.Messages(charlie.Id, null).Count == 1, "direct messages do not appear in shared room");
-Check(await store.SendAsync(alice, charlie.Id, "offline") is not null, "messages to offline users are rejected");
+Check((await store.MessagesAsync(bob.Id, alice.Id)).Single().Text == "private", "direct message is visible to recipient");
+Check((await store.MessagesAsync(charlie.Id, alice.Id)).Count == 0, "direct messages are isolated from other conversations");
+Check((await store.MessagesAsync(charlie.Id, null)).Count == 1, "direct messages do not appear in shared room");
+Check(await store.SendAsync(alice, charlie.Id, "offline") is not null, "messages to unknown users are rejected");
 Check(await store.SendAsync(alice, alice.Id, "self") is not null, "messages to self are rejected");
 Check(await store.SendAsync(alice, null, "  ") is not null, "empty messages are rejected");
 Check(await store.SendAsync(alice, null, new string('a', 2001)) is not null, "oversized messages are rejected");
@@ -38,15 +39,37 @@ for (var index = 0; index < 205; index++)
 {
     await store.SendAsync(alice, bob.Id, index.ToString());
 }
-var history = store.Messages(alice.Id, bob.Id);
-Check(history.Count == 200 && history[0].Text == "5" && history[^1].Text == "204", "history keeps the most recent 200 messages");
+var history = await store.MessagesAsync(alice.Id, bob.Id);
+Check(history.Count == 206 && history[0].Text == "private" && history[^1].Text == "204", "history retains more than 200 messages");
 
 await store.DisconnectAsync(aliceTab);
-Check(store.OnlineUsers(bob.Id).Count == 1, "closing one tab leaves the other online");
+Check((await store.UsersAsync(bob.Id)).Single().IsOnline, "closing one tab leaves the other online");
 await store.DisconnectAsync(aliceSecondTab);
-Check(store.OnlineUsers(bob.Id).Count == 0, "closing the last tab removes the user");
+Check(!(await store.UsersAsync(bob.Id)).Single().IsOnline, "closing the last tab marks the user offline");
+Check(await store.SendAsync(bob, alice.Id, "offline delivery") is null, "messages to known offline users are accepted");
+var restarted = new ChatStore(repository, NullLogger<ChatStore>.Instance);
+Check((await restarted.MessagesAsync(alice.Id, bob.Id)).Last().Text == "offline delivery", "messages survive store restart");
+Check((await restarted.UsersAsync(bob.Id)).Single().Id == alice.Id, "users survive store restart");
 Check(await store.SendAsync(alice, null, "disconnected") is not null, "disconnected users cannot send");
 
 Check(await store.SendAsync(bob, null, null) is not null, "null messages are rejected");
 
+var updated = await repository.UpdateProfileAsync(alice.Id, "Alice_123", "picture-id");
+Check(updated.Success, "profile can be updated");
+await store.ConnectAsync(aliceTab, new ChatUser(alice.Id, "New SSO name"), Notify);
+var profile = await repository.GetUserAsync(alice.Id);
+Check(profile?.Name == "Alice_123" && profile.Picture == "picture-id", "reconnecting preserves the chosen profile");
+Check((await store.MessagesAsync(bob.Id, null)).First().SenderName == "Alice_123", "historical messages use the current username");
+Check(!(await repository.UpdateProfileAsync(bob.Id, "alice_123", null)).Success, "usernames are case-insensitively unique");
+var simultaneous = await Task.WhenAll(repository.UpdateProfileAsync(alice.Id, "shared_name", null),
+    repository.UpdateProfileAsync(bob.Id, "SHARED_NAME", null));
+Check(simultaneous.Count(result => result.Success) == 1, "concurrent username claims have one winner");
+
 await HubChecks.RunAsync();
+
+var cosmosEndpoint = Environment.GetEnvironmentVariable("COSMOS_TEST_ENDPOINT");
+if (!string.IsNullOrWhiteSpace(cosmosEndpoint))
+    await CosmosChecks.RunAsync(cosmosEndpoint);
+var blobEndpoint = Environment.GetEnvironmentVariable("BLOB_TEST_ENDPOINT");
+if (!string.IsNullOrWhiteSpace(blobEndpoint))
+    await BlobChecks.RunAsync(blobEndpoint);

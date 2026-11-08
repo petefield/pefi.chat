@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PefiChat.Chat;
+using Azure.Storage.Blobs;
 
 internal static class HubChecks
 {
@@ -22,7 +23,10 @@ internal static class HubChecks
         builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("test", _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddSignalR();
+        builder.Services.AddSingleton<IChatRepository, InMemoryChatRepository>();
         builder.Services.AddSingleton<ChatStore>();
+        builder.Services.AddSingleton(new BlobContainerClient(new Uri("http://127.0.0.1:10000/profiles")));
+        builder.Services.AddSingleton<ProfilePictures>();
         await using var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
@@ -44,18 +48,23 @@ internal static class HubChecks
         await bob.StartAsync();
         await charlie.StartAsync();
         var aliceState = await alice.InvokeAsync<ChatSnapshot>("GetSnapshot", (string?)null);
-        Check(aliceState.User.Id == "alice" && aliceState.OnlineUsers.Count == 2, "hub derives identity and presence from authenticated connections");
+        Check(aliceState.User.Id == "alice" && aliceState.Users.Count == 2 && aliceState.Users.All(user => user.IsOnline), "hub derives identity and presence from authenticated connections");
         Check(await alice.InvokeAsync<string?>("SendMessage", (string?)null, "hello") is null, "hub accepts shared message");
         Check((await bob.InvokeAsync<ChatSnapshot>("GetSnapshot", (string?)null)).Messages.Single().Text == "hello", "shared message reaches another client");
+        Check(await alice.InvokeAsync<string?>("UpdateProfile", "Alice_New", (byte[]?)null) is null, "hub accepts a valid username");
+        Check((await bob.InvokeAsync<ChatSnapshot>("GetSnapshot", (string?)null)).Messages.Single().SenderName == "Alice_New", "hub returns current names on old messages");
+        Check(await bob.InvokeAsync<string?>("UpdateProfile", "alice_new", (byte[]?)null) is not null, "hub rejects duplicate username");
+        Check(await bob.InvokeAsync<string?>("UpdateProfile", "x", (byte[]?)null) is not null, "hub rejects invalid username");
+        Check(await bob.InvokeAsync<string?>("UpdateProfile", "Bob_123", new byte[] { 1, 2, 3 }) is not null, "hub rejects invalid image content");
         Check(await alice.InvokeAsync<string?>("SendMessage", "bob", "secret") is null, "hub accepts direct message");
         Check((await bob.InvokeAsync<ChatSnapshot>("GetSnapshot", "alice")).Messages.Single().Text == "secret", "recipient reads direct message");
         Check((await charlie.InvokeAsync<ChatSnapshot>("GetSnapshot", "alice")).Messages.Count == 0, "third party cannot read another pair's messages");
         await WaitUntilAsync(() => Volatile.Read(ref aliceNotifications) > 0 && Volatile.Read(ref bobNotifications) > 0);
         Check(true, "connected clients receive change notifications");
         await bob.StopAsync();
-        Check(await alice.InvokeAsync<string?>("SendMessage", "bob", "offline") is not null, "hub rejects messages after recipient disconnects");
+        Check(await alice.InvokeAsync<string?>("SendMessage", "bob", "offline") is null, "hub accepts messages after recipient disconnects");
         await bob.StartAsync();
-        Check((await bob.InvokeAsync<ChatSnapshot>("GetSnapshot", "alice")).Messages.Single().Text == "secret", "reconnected client receives existing history");
+        Check((await bob.InvokeAsync<ChatSnapshot>("GetSnapshot", "alice")).Messages.Last().Text == "offline", "reconnected client receives offline messages");
         await app.StopAsync();
     }
 

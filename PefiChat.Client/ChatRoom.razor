@@ -2,57 +2,146 @@
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @inject ILogger<ChatRoom> Logger
+@using Microsoft.AspNetCore.Components.Forms
 
-@if (user is not null)
-{
-    <div class="chat-layout">
-        <aside class="sidebar">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M5 6.5h14v9H11l-4 3v-3H5v-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.5 10.9h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </span>
+            <div><h1>Pefi Chat</h1><p class="brand-subtitle">A little space to connect</p></div>
+        </div>
+        <div class="account">
+            @if (user is not null)
+            {
             <div class="identity">
-                <span class="avatar">@Initial(user.Name)</span>
+                @if (user.Picture is not null)
+                {
+                    <img class="avatar" src="@PictureUrl(user.Picture)" alt="" />
+                }
+                else
+                {
+                    <span class="avatar" aria-hidden="true">@Initial(user.Name)</span>
+                }
                 <div><strong>@user.Name</strong><small>Signed in</small></div>
             </div>
-            <p class="section-label">CONVERSATIONS</p>
-            <button type="button" class="conversation @(selectedUserId is null ? "active" : "")"
-                    @onclick="() => SelectUserAsync(null, null)">
-                <span class="conversation-icon">#</span>
-                <span><strong>Everyone</strong><small>Shared room</small></span>
-            </button>
-            <p class="section-label">ONLINE <span>@online.Count</span></p>
-            @if (online.Count == 0)
-            {
-                <p class="empty-users">No one else is online yet.</p>
+            <button type="button" class="secondary" @onclick="OpenProfile">Edit profile</button>
             }
-            @foreach (var person in online)
+            <form action="/logout" method="post">
+                <input type="hidden" name="__RequestVerificationToken" value="@LogoutToken" />
+                <button class="secondary" type="submit">Sign out</button>
+            </form>
+        </div>
+    </header>
+@if (user is not null)
+{
+    @if (editingProfile)
+    {
+        <section class="profile-editor" aria-label="Edit profile">
+            <h2>Edit profile</h2>
+            <p>Choose a unique username and optionally upload a picture.</p>
+            <form @onsubmit="SaveProfileAsync" @onsubmit:preventDefault>
+                <label for="username">Username</label>
+                <input id="username" maxlength="@ChatLimits.MaximumUsernameLength" @bind="profileName" autocomplete="off" />
+                <small>3–32 letters, numbers, underscores or hyphens.</small>
+                <label for="profile-picture">Profile picture</label>
+                <InputFile id="profile-picture" OnChange="SelectPictureAsync" accept="image/png,image/jpeg,image/webp,image/gif" />
+                <small>Up to 512 KB. Images are cropped to a square.</small>
+                @if (profileError is not null) { <p class="profile-error" role="alert">@profileError</p> }
+                <div class="profile-actions">
+                    <button type="submit" disabled="@(!connected || savingProfile)">Save profile</button>
+                    <button type="button" class="secondary" @onclick="CloseProfile" disabled="@savingProfile">Cancel</button>
+                </div>
+            </form>
+        </section>
+    }
+    <div class="chat-layout">
+        <nav class="conversation-tabs" aria-label="Conversation types">
+            <button type="button" class="conversation-tab @(!showDirectMessages ? "active" : "")"
+                    aria-pressed="@(!showDirectMessages)" @onclick="() => SelectTabAsync(false)">Rooms</button>
+            <button type="button" class="conversation-tab @(showDirectMessages ? "active" : "")"
+                    aria-pressed="@showDirectMessages" @onclick="() => SelectTabAsync(true)">Direct messages</button>
+        </nav>
+        <aside class="sidebar">
+            @if (!showDirectMessages)
             {
-                <button type="button" class="conversation @(selectedUserId == person.Id ? "active" : "")"
-                        @onclick="() => SelectUserAsync(person.Id, person.Name)">
-                    <span class="person-avatar">@Initial(person.Name)</span>
-                    <span><strong>@person.Name</strong><small>Direct message · @person.Id[..6]</small></span>
-                    <span class="online-dot" aria-label="Online"></span>
+                <p class="section-label">YOUR ROOMS</p>
+                <button type="button" class="conversation active" aria-current="true"
+                        @onclick="() => SelectUserAsync(null, null)">
+                    <span class="conversation-icon">#</span>
+                    <span><strong>Everyone</strong><small>Shared room</small></span>
                 </button>
+            }
+            else
+            {
+                <p class="section-label">PEOPLE <span class="count">@users.Count</span></p>
+                @if (users.Count == 0)
+                {
+                    <p class="empty-users">No other users have signed in yet.</p>
+                }
+                @foreach (var person in users)
+                {
+                    <button type="button" class="conversation @(selectedUserId == person.Id ? "active" : "")"
+                            aria-current="@(selectedUserId == person.Id ? "true" : null)"
+                            @onclick="() => SelectUserAsync(person.Id, person.Name)">
+                        @if (person.Picture is not null)
+                        {
+                            <img class="person-avatar" src="@PictureUrl(person.Picture)" alt="" />
+                        }
+                        else
+                        {
+                            <span class="person-avatar">@Initial(person.Name)</span>
+                        }
+                        <span><strong>@person.Name</strong><small>@(person.IsOnline ? "Online" : "Offline") · @person.Id[..6]</small></span>
+                        <span class="online-dot @(!person.IsOnline ? "is-offline" : "")" aria-label="@(person.IsOnline ? "Online" : "Offline")"></span>
+                    </button>
+                }
             }
         </aside>
         <section class="chat-panel" aria-label="Chat conversation">
+            @if (showDirectMessages && selectedUserId is null)
+            {
+                <div class="chat-heading">
+                    <div>
+                        <p class="eyebrow">DIRECT MESSAGES</p>
+                        <h2>Choose a conversation</h2>
+                    </div>
+                    <span class="live @(!connected ? "offline" : "")"><span class="online-dot"></span> @(connected ? "Connected" : "Offline")</span>
+                </div>
+                <div class="messages">
+                    <div class="empty-chat">
+                        <span class="empty-icon" aria-hidden="true">✳</span>
+                        <h3>Start a direct message</h3>
+                        <p>Choose someone to start a conversation, even if they are offline.</p>
+                    </div>
+                </div>
+            }
+            else
+            {
             <div class="chat-heading">
                 <div>
                     <p class="eyebrow">@(selectedUserId is null ? "SHARED ROOM" : "DIRECT MESSAGE")</p>
                     <h2>@(selectedUserName ?? "Everyone")</h2>
                 </div>
-                <span class="live"><span class="online-dot"></span> @(connected ? "Live" : "Offline")</span>
+                <span class="live @(!connected ? "offline" : "")"><span class="online-dot"></span> @(connected ? "Connected" : "Offline")</span>
             </div>
             <div class="messages" role="log" aria-live="polite">
                 @if (messages.Count == 0)
                 {
                     <div class="empty-chat">
-                        <span class="empty-icon">✳</span>
-                        <h3>Start the conversation</h3>
-                        <p>Say hello! Messages in this conversation will appear here.</p>
+                        <span class="empty-icon" aria-hidden="true">✳</span>
+                        <h3>A fresh start</h3>
+                        <p>Good conversations begin with a hello.<br />Send the first message to get things going.</p>
                     </div>
                 }
                 @foreach (var message in messages)
                 {
                     <article class="message @(message.SenderId == user.Id ? "own" : "")">
                         <div class="message-meta">
+                            @if (message.SenderPicture is not null)
+                            {
+                                <img class="message-avatar" src="@PictureUrl(message.SenderPicture)" alt="" />
+                            }
                             <strong>@message.SenderName</strong>
                             <time datetime="@message.SentAt.ToString("O")">@message.SentAt.ToLocalTime().ToString("HH:mm")</time>
                         </div>
@@ -64,9 +153,10 @@
                 <label class="sr-only" for="message">Message</label>
                 <input id="message" maxlength="@ChatLimits.MaximumMessageLength" @bind="text"
                        @bind:event="oninput" placeholder="Write a message..." autocomplete="off" disabled="@(!connected)" />
-                <button type="submit" disabled="@(!connected)">Send <span aria-hidden="true">↗</span></button>
+                <button type="submit" disabled="@(!connected)">Send <span aria-hidden="true">↑</span></button>
             </form>
-            <p class="chat-footnote">Messages are temporary and will disappear when the server restarts.</p>
+            <p class="chat-footnote">Messages are saved, so you can pick up the conversation later.</p>
+            }
         </section>
     </div>
 }
@@ -87,17 +177,88 @@ else if (error is null)
 }
 
 @code {
+    [Parameter] public string LogoutToken { get; set; } = "";
     private HubConnection? connection;
     private ChatUser? user;
-    private IReadOnlyList<ChatUser> online = [];
+    private IReadOnlyList<ChatContact> users = [];
     private IReadOnlyList<ChatMessage> messages = [];
     private string? selectedUserId;
     private string? selectedUserName;
+    private string? lastDirectUserId;
+    private string? lastDirectUserName;
+    private bool showDirectMessages;
+    private readonly Dictionary<string, string> drafts = [];
     private string text = "";
     private string? error;
     private bool connected;
     private bool disposed;
     private int refreshVersion;
+    private bool editingProfile;
+    private bool savingProfile;
+    private string profileName = "";
+    private string? profileError;
+    private byte[]? profileImage;
+    private bool pictureSelectionInvalid;
+
+    private void OpenProfile()
+    {
+        profileName = user?.Username ?? "";
+        profileImage = null;
+        pictureSelectionInvalid = false;
+        profileError = null;
+        editingProfile = true;
+    }
+
+    private void CloseProfile() => editingProfile = false;
+
+    private async Task SelectPictureAsync(InputFileChangeEventArgs args)
+    {
+        profileImage = null;
+        pictureSelectionInvalid = false;
+        profileError = null;
+        if (args.File.Size > ChatLimits.MaximumPictureBytes)
+        {
+            profileError = "Pictures must be 512 KB or smaller.";
+            pictureSelectionInvalid = true;
+            return;
+        }
+        try
+        {
+            await using var stream = args.File.OpenReadStream(ChatLimits.MaximumPictureBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            profileImage = buffer.ToArray();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not read the selected profile picture.");
+            profileError = "Could not read the picture. Please choose it again.";
+            pictureSelectionInvalid = true;
+        }
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (connection is null || !connected || savingProfile || pictureSelectionInvalid) return;
+        savingProfile = true;
+        try
+        {
+            profileError = await connection.InvokeAsync<string?>("UpdateProfile", profileName, profileImage);
+            if (profileError is null)
+            {
+                editingProfile = false;
+                await RefreshAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not update profile.");
+            profileError = "Could not update your profile. Please try again.";
+        }
+        finally { savingProfile = false; }
+    }
+
+    private static string PictureUrl(string picture) => $"/profile-pictures/{picture}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -157,8 +318,13 @@ else if (error is null)
             var snapshot = await connection.InvokeAsync<ChatSnapshot>("GetSnapshot", recipient);
             if (version != refreshVersion || disposed) return;
             user = snapshot.User;
-            online = snapshot.OnlineUsers;
+            users = snapshot.Users;
             messages = snapshot.Messages;
+            if (selectedUserId is not null && users.FirstOrDefault(person => person.Id == selectedUserId) is { } selected)
+            {
+                selectedUserName = selected.Name;
+                lastDirectUserName = selected.Name;
+            }
             StateHasChanged();
         }
         catch (Exception exception)
@@ -174,21 +340,61 @@ else if (error is null)
 
     private async Task SelectUserAsync(string? id, string? name)
     {
+        var oldKey = ConversationDraftKey();
+        if (oldKey is not null) drafts[oldKey] = text;
         selectedUserId = id;
         selectedUserName = name;
+        if (showDirectMessages && id is not null)
+        {
+            lastDirectUserId = id;
+            lastDirectUserName = name;
+        }
+        var newKey = ConversationDraftKey();
+        text = newKey is not null && drafts.TryGetValue(newKey, out var draft) ? draft : "";
         messages = [];
         error = null;
+        refreshVersion++;
         await RefreshAsync();
     }
 
+    private async Task SelectTabAsync(bool directMessages)
+    {
+        if (showDirectMessages == directMessages) return;
+        var oldKey = ConversationDraftKey();
+        if (oldKey is not null) drafts[oldKey] = text;
+        showDirectMessages = directMessages;
+        selectedUserId = directMessages ? lastDirectUserId : null;
+        selectedUserName = directMessages ? lastDirectUserName : null;
+        var newKey = ConversationDraftKey();
+        text = newKey is not null && drafts.TryGetValue(newKey, out var draft) ? draft : "";
+        messages = [];
+        error = null;
+        refreshVersion++;
+        await RefreshAsync();
+    }
+
+    private string? ConversationDraftKey() =>
+        showDirectMessages ? selectedUserId : "shared";
+
     private async Task SendAsync()
     {
-        if (!connected || connection is null) return;
+        if (!connected || connection is null || (showDirectMessages && selectedUserId is null)) return;
         var message = text;
+        var draftKey = ConversationDraftKey();
+        var recipient = selectedUserId;
         try
         {
-            error = await connection.InvokeAsync<string?>("SendMessage", selectedUserId, message);
-            if (error is null && text == message) text = "";
+            var result = await connection.InvokeAsync<string?>("SendMessage", recipient, message);
+            if (result is null && draftKey is not null)
+            {
+                if (drafts.TryGetValue(draftKey, out var savedDraft) && savedDraft == message)
+                    drafts.Remove(draftKey);
+                if (ConversationDraftKey() == draftKey && text == message) text = "";
+            }
+            if (result is not null && ConversationDraftKey() != draftKey)
+                error = $"Could not send the previous message: {result}";
+            else if (ConversationDraftKey() == draftKey)
+                error = result;
         }
         catch (Exception exception)
         {

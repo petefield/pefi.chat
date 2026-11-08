@@ -1,15 +1,13 @@
 namespace PefiChat.Chat;
 
-// All state is process-local. Access and snapshots are protected by a single lock.
-public sealed class ChatStore(ILogger<ChatStore> logger)
+public sealed class ChatStore(IChatRepository repository, ILogger<ChatStore> logger)
 {
-    private const int HistoryLimit = 200;
     private readonly Lock gate = new();
     private readonly Dictionary<string, (ChatUser User, Func<Task> Notify)> connections = [];
-    private readonly Dictionary<string, List<ChatMessage>> conversations = [];
 
     public async Task ConnectAsync(string connectionId, ChatUser user, Func<Task> notify)
     {
+        await repository.SaveUserAsync(user);
         lock (gate)
         {
             connections[connectionId] = (user, notify);
@@ -30,28 +28,35 @@ public sealed class ChatStore(ILogger<ChatStore> logger)
         }
     }
 
-    public IReadOnlyList<ChatUser> OnlineUsers(string excludingUserId)
+    public async Task<IReadOnlyList<ChatContact>> UsersAsync(string excludingUserId)
     {
+        var users = await repository.GetUsersAsync();
+        HashSet<string> online;
         lock (gate)
         {
-            return connections.Values.Select(c => c.User)
-                .Where(user => user.Id != excludingUserId)
-                .DistinctBy(user => user.Id)
-                .OrderBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(user => user.Id, StringComparer.Ordinal)
-                .ToArray();
+            online = connections.Values.Select(connection => connection.User.Id).ToHashSet();
         }
+        return users.Where(user => user.Id != excludingUserId)
+            .OrderBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(user => user.Id, StringComparer.Ordinal)
+            .Select(user => new ChatContact(user.Id, user.Name, online.Contains(user.Id), user.Picture))
+            .ToArray();
     }
 
-    public IReadOnlyList<ChatMessage> Messages(string userId, string? otherUserId)
+    public async Task<IReadOnlyList<ChatMessage>> MessagesAsync(string userId, string? otherUserId)
     {
-        lock (gate)
-        {
-            return conversations.TryGetValue(ConversationKey(userId, otherUserId), out var messages)
-                ? messages.ToArray()
-                : [];
-        }
+        var messages = await repository.GetMessagesAsync(ConversationKey(userId, otherUserId));
+        var users = (await repository.GetUsersAsync()).ToDictionary(user => user.Id);
+        return messages.Select(message => users.TryGetValue(message.SenderId, out var user)
+            ? message with { SenderName = user.Name, SenderPicture = user.Picture } : message).ToArray();
     }
+
+    public Task<ChatUser?> GetUserAsync(string id) => repository.GetUserAsync(id);
+
+    public Task<ProfileUpdateResult> UpdateProfileAsync(string id, string username, string? picture) =>
+        repository.UpdateProfileAsync(id, username, picture);
+
+    public Task ProfileChangedAsync() => NotifyAsync();
 
     public async Task<string?> SendAsync(ChatUser sender, string? recipientId, string? text)
     {
@@ -67,25 +72,13 @@ public sealed class ChatStore(ILogger<ChatStore> logger)
             {
                 return "You are no longer connected. Please refresh the page.";
             }
-            if (recipientId is not null &&
-                (recipientId == sender.Id || !connections.Values.Any(connection => connection.User.Id == recipientId)))
-            {
-                return "That user is no longer online.";
-            }
-
-            var key = ConversationKey(sender.Id, recipientId);
-            if (!conversations.TryGetValue(key, out var messages))
-            {
-                messages = [];
-                conversations.Add(key, messages);
-            }
-            messages.Add(new ChatMessage(sender.Id, sender.Name, text, DateTimeOffset.UtcNow));
-            if (messages.Count > HistoryLimit)
-            {
-                messages.RemoveAt(0);
-            }
         }
 
+        if (recipientId is not null && (recipientId == sender.Id || !await repository.UserExistsAsync(recipientId)))
+            return "That user could not be found.";
+
+        await repository.SaveMessageAsync(ConversationKey(sender.Id, recipientId),
+            new ChatMessage(sender.Id, sender.Name, text, DateTimeOffset.UtcNow));
         await NotifyAsync();
         return null;
     }
