@@ -74,3 +74,9 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           package: ${{ runner.temp }}/pefi-chat-publish
           startup-command: dotnet PefiChat.dll
+
+      - name: Restart app after deployment
+        env:
+          WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: az webapp restart --name "$WEBAPP_NAME" --resource-group "$RESOURCE_GROUP"
