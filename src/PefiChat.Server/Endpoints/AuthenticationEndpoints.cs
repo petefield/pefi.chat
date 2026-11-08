@@ -9,7 +9,7 @@ public static class AuthenticationEndpoints
 {
     public static void MapAuthenticationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/login/{provider}", (string provider, SignInProviders providers) =>
+        endpoints.MapGet("/login/{provider}", (string provider, string? returnUrl, SignInProviders providers) =>
         {
             var scheme = provider.ToLowerInvariant() switch
             {
@@ -19,7 +19,7 @@ public static class AuthenticationEndpoints
             };
             return scheme is null
                 ? Results.NotFound()
-                : Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [scheme]);
+                : Results.Challenge(new AuthenticationProperties { RedirectUri = SafeReturnUrl(returnUrl) }, [scheme]);
         });
 
         endpoints.MapPost("/logout", async (HttpContext context, IAntiforgery antiforgery) =>
@@ -29,5 +29,14 @@ public static class AuthenticationEndpoints
             await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.LocalRedirect("/");
         }).RequireAuthorization();
+    }
+
+    private static string SafeReturnUrl(string? url)
+    {
+        const string prefix = "/chat/";
+        if (url is null || !url.StartsWith(prefix, StringComparison.Ordinal)) return "/";
+        var id = url[prefix.Length..];
+        return id.Length is > 0 and <= 128 && id.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
+            ? url : "/";
     }
 }

@@ -9,7 +9,7 @@ internal static class ProfileChecks
         var repository = new InMemoryChatRepository();
         await repository.SaveUserAsync(new ChatUser("alice", "Alice"));
         await repository.SaveUserAsync(new ChatUser("bob", "Bob"));
-        var chat = new ChatService(repository, NullLogger<ChatService>.Instance);
+        var chat = new ChatService(repository, new TestPushService(), NullLogger<ChatService>.Instance);
         var pictures = new TestPictureStore();
         var profiles = new ProfileService(chat, pictures);
         var notifications = 0;

@@ -6,6 +6,8 @@ using PefiChat.Chat;
 using PefiChat.Infrastructure.Chat;
 using PefiChat.Infrastructure.Profiles;
 using PefiChat.Profiles;
+using PefiChat.Push;
+using PefiChat.Infrastructure.Push;
 
 namespace PefiChat.Infrastructure;
 
@@ -40,6 +42,7 @@ public static class InfrastructureServiceCollectionExtensions
                 : new CosmosClient(endpoint, key, new CosmosClientOptions { ConnectionMode = ConnectionMode.Gateway });
         });
         services.AddSingleton<IChatRepository, CosmosChatRepository>();
+        services.AddSingleton<IPushService, CosmosPushService>();
         return services;
     }
 }

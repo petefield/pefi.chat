@@ -1,4 +1,5 @@
 @page "/"
+@page "/chat/{SenderId}"
 @inject SignInProviders Providers
 @inject IHttpContextAccessor ContextAccessor
 @inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
@@ -24,7 +25,7 @@
 
     <AuthorizeView>
         <Authorized>
-            <PefiChat.Client.ChatRoom LogoutToken="@(Antiforgery.GetAndStoreTokens(ContextAccessor.HttpContext!).RequestToken!)" @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
+            <PefiChat.Client.ChatRoom SenderId="@SenderId" LogoutToken="@(Antiforgery.GetAndStoreTokens(ContextAccessor.HttpContext!).RequestToken!)" @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
         </Authorized>
         <NotAuthorized>
             <section class="welcome">
@@ -37,11 +38,11 @@
                 <div class="signin-actions">
                     @if (Providers.Google)
                     {
-                        <a class="button provider-button" href="/login/google"><span class="provider-icon" aria-hidden="true">G</span>Continue with Google <span class="button-arrow" aria-hidden="true">→</span></a>
+                        <a class="button provider-button" href="@LoginUrl("google")"><span class="provider-icon" aria-hidden="true">G</span>Continue with Google <span class="button-arrow" aria-hidden="true">→</span></a>
                     }
                     @if (Providers.Microsoft)
                     {
-                        <a class="button provider-button" href="/login/microsoft"><span class="microsoft-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Continue with Microsoft <span class="button-arrow" aria-hidden="true">→</span></a>
+                        <a class="button provider-button" href="@LoginUrl("microsoft")"><span class="microsoft-icon" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Continue with Microsoft <span class="button-arrow" aria-hidden="true">→</span></a>
                     }
                 </div>
                 @if (!Providers.Google && !Providers.Microsoft)
@@ -53,3 +54,10 @@
         </NotAuthorized>
     </AuthorizeView>
 </main>
+
+@code {
+    [Parameter] public string? SenderId { get; set; }
+    private string LoginUrl(string provider) => SenderId is null
+        ? $"/login/{provider}"
+        : $"/login/{provider}?returnUrl={Uri.EscapeDataString($"/chat/{SenderId}")}";
+}

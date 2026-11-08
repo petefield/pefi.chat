@@ -8,6 +8,7 @@ public interface IChatRepository
     Task<IReadOnlyList<ChatUser>> GetUsersAsync();
     Task<bool> UserExistsAsync(string id);
     Task SaveMessageAsync(string conversationId, ChatMessage message);
+    Task<bool> SaveDirectMessageAsync(string conversationId, ChatMessage message);
     Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId);
 }
 

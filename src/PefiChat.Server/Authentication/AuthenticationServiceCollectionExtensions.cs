@@ -62,7 +62,8 @@ public static class AuthenticationServiceCollectionExtensions
         Microsoft.AspNetCore.Authentication.RedirectContext<CookieAuthenticationOptions> context, int statusCode)
     {
         if (context.Request.Path.StartsWithSegments("/chat-hub") ||
-            context.Request.Path.StartsWithSegments("/profile-pictures"))
+            context.Request.Path.StartsWithSegments("/profile-pictures") ||
+            context.Request.Path.StartsWithSegments("/api/push"))
         {
             context.Response.StatusCode = statusCode;
             context.Response.ContentLength = 0;

@@ -1,0 +1,35 @@
+@baseUrl = https://localhost:7268
+@csrf = REPLACE_WITH_AUTHENTICATED_ANTIFORGERY_TOKEN
+@sendSecret = REPLACE_WITH_SERVER_SEND_SECRET
+
+### Public VAPID key (requires authenticated cookie)
+GET {{baseUrl}}/api/push/public-key
+
+### Register a real browser subscription (requires authenticated and antiforgery cookies)
+POST {{baseUrl}}/api/push/subscribe
+Content-Type: application/json
+X-CSRF-TOKEN: {{csrf}}
+
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/REPLACE_WITH_BROWSER_ENDPOINT",
+  "keys": {
+    "p256dh": "REPLACE_WITH_BROWSER_P256DH",
+    "auth": "REPLACE_WITH_BROWSER_AUTH"
+  }
+}
+
+### Server-to-server notification
+POST {{baseUrl}}/api/push/send
+Content-Type: application/json
+X-Push-Secret: {{sendSecret}}
+
+{
+  "userId": "RECIPIENT_CHAT_ID",
+  "payload": {
+    "title": "New message from Alice",
+    "body": "Hello",
+    "icon": "/icon-512.png",
+    "tag": "new-sender-ALICE_CHAT_ID",
+    "url": "/chat/ALICE_CHAT_ID"
+  }
+}

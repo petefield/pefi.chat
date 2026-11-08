@@ -2,7 +2,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PefiChat.Chat;
 
 var repository = new InMemoryChatRepository();
-var store = new ChatService(repository, NullLogger<ChatService>.Instance);
+var push = new TestPushService();
+var store = new ChatService(repository, push, NullLogger<ChatService>.Instance);
 var alice = new ChatUser("alice", "Alice");
 var bob = new ChatUser("bob", "Bob");
 var charlie = new ChatUser("charlie", "Charlie");
@@ -26,6 +27,9 @@ Check(notifications > 0, "presence changes notify connected clients");
 Check(await store.SendMessageAsync(alice, null, " hello everyone ") is null, "shared message is accepted");
 Check((await store.GetMessagesAsync(bob.Id, null)).Single().Text == "hello everyone", "shared messages are visible and trimmed");
 Check(await store.SendMessageAsync(alice, bob.Id, "private") is null, "direct message to online user is accepted");
+Check(push.Sent.Count == 1 && push.Sent[0].UserId == bob.Id &&
+    push.Sent[0].Payload == new PefiChat.Push.PushPayload("New message from Alice", "private",
+        "/icon-512.png", "new-sender-alice", "/chat/alice"), "first direct message produces the expected recipient notification");
 Check((await store.GetMessagesAsync(bob.Id, alice.Id)).Single().Text == "private", "direct message is visible to recipient");
 Check((await store.GetMessagesAsync(charlie.Id, alice.Id)).Count == 0, "direct messages are isolated from other conversations");
 Check((await store.GetMessagesAsync(charlie.Id, null)).Count == 1, "direct messages do not appear in shared room");
@@ -47,7 +51,8 @@ Check((await store.GetUsersAsync(bob.Id)).Single().IsOnline, "closing one tab le
 await store.DisconnectAsync(aliceSecondTab);
 Check(!(await store.GetUsersAsync(bob.Id)).Single().IsOnline, "closing the last tab marks the user offline");
 Check(await store.SendMessageAsync(bob, alice.Id, "offline delivery") is null, "messages to known offline users are accepted");
-var restarted = new ChatService(repository, NullLogger<ChatService>.Instance);
+Check(push.Sent.Count == 2 && push.Sent[1].UserId == alice.Id, "first contact is directional and subsequent messages do not notify");
+var restarted = new ChatService(repository, push, NullLogger<ChatService>.Instance);
 Check((await restarted.GetMessagesAsync(alice.Id, bob.Id)).Last().Text == "offline delivery", "messages survive store restart");
 Check((await restarted.GetUsersAsync(bob.Id)).Single().Id == alice.Id, "users survive store restart");
 Check(await store.SendMessageAsync(alice, null, "disconnected") is not null, "disconnected users cannot send");
@@ -65,9 +70,28 @@ var simultaneous = await Task.WhenAll(repository.UpdateProfileAsync(alice.Id, "s
     repository.UpdateProfileAsync(bob.Id, "SHARED_NAME", null));
 Check(simultaneous.Count(result => result.Success) == 1, "concurrent username claims have one winner");
 
+var raceRepository = new InMemoryChatRepository();
+var racePush = new TestPushService();
+var raceChat = new ChatService(raceRepository, racePush, NullLogger<ChatService>.Instance);
+await raceChat.ConnectAsync("a", alice, Notify);
+await raceChat.ConnectAsync("b", bob, Notify);
+var longPreview = string.Concat(Enumerable.Repeat("😀", 101));
+await Task.WhenAll(Enumerable.Range(0, 30).Select(_ => Task.Run(() => raceChat.SendMessageAsync(alice, bob.Id, longPreview))));
+Check(racePush.Sent.Count == 1 && racePush.Sent[0].Payload.Body == string.Concat(Enumerable.Repeat("😀", 100)),
+    "concurrent first messages notify once and previews preserve 100 Unicode characters");
+var legacyRepository = new InMemoryChatRepository();
+await legacyRepository.SaveMessageAsync("alice:bob", new ChatMessage(alice.Id, alice.Name, "old", DateTimeOffset.UtcNow));
+var legacyPush = new TestPushService();
+var legacyChat = new ChatService(legacyRepository, legacyPush, NullLogger<ChatService>.Instance);
+await legacyChat.ConnectAsync("a", alice, Notify);
+await legacyChat.ConnectAsync("b", bob, Notify);
+await legacyChat.SendMessageAsync(alice, bob.Id, "new");
+Check(legacyPush.Sent.Count == 0, "pre-existing history does not count as first contact");
+
 await HubChecks.RunAsync();
 await EndpointChecks.RunAsync();
 await ProfileChecks.RunAsync();
+await WebPushChecks.RunAsync();
 
 var cosmosEndpoint = Environment.GetEnvironmentVariable("COSMOS_TEST_ENDPOINT");
 if (!string.IsNullOrWhiteSpace(cosmosEndpoint))

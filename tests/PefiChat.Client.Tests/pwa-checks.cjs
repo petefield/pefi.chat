@@ -27,6 +27,8 @@ const deleted = [];
 let online = true;
 let claimed = false;
 let skipped = false;
+let shown;
+let opened;
 const cache = {
     async add(request) { stored.set(request.url, "offline-page"); },
     async match(key) { return stored.get(key); }
@@ -35,7 +37,12 @@ const self = {
     location: { origin: "https://chat.example" },
     addEventListener(name, callback) { listeners[name] = callback; },
     async skipWaiting() { skipped = true; },
-    clients: { async claim() { claimed = true; } }
+    registration: { async showNotification(title, options) { shown = { title, options }; } },
+    clients: {
+        async claim() { claimed = true; },
+        async matchAll() { return []; },
+        async openWindow(url) { opened = url; }
+    }
 };
 const caches = {
     async open(name) { assert.equal(name, "pefi-chat-offline-v1"); return cache; },
@@ -73,6 +80,7 @@ function dispatchFetch(url, mode = "navigate", method = "GET") {
     assert.equal(await dispatchFetch("https://chat.example/"), "online-page");
     online = false;
     assert.equal(await dispatchFetch("https://chat.example/"), "offline-page");
+    assert.equal(await dispatchFetch("https://chat.example/chat/1"), "offline-page");
     for (const [url, mode, method] of [
         ["https://chat.example/chat-hub", "cors", "GET"],
         ["https://chat.example/profile-pictures/123", "no-cors", "GET"],
@@ -81,5 +89,25 @@ function dispatchFetch(url, mode = "navigate", method = "GET") {
         ["https://other.example/", "navigate", "GET"]
     ]) assert.equal(dispatchFetch(url, mode, method), undefined);
     assert.equal(stored.size, 1, "private responses must not be cached");
-    console.log("PASS: PWA manifest, icon sizes, offline fallback and network-only private requests");
+    const payload = { title: "New message", body: "hello", icon: "/icon-512.png", tag: "new-sender-1", url: "/chat/1" };
+    let task;
+    listeners.push({ data: { json: () => payload }, waitUntil(value) { task = value; } });
+    await task;
+    assert.equal(shown.title, payload.title);
+    assert.equal(shown.options.body, payload.body);
+    assert.equal(shown.options.icon, payload.icon);
+    assert.equal(shown.options.tag, payload.tag);
+    assert.equal(shown.options.data.url, payload.url);
+    let closed = false;
+    listeners.notificationclick({ notification: { data: { url: payload.url }, close() { closed = true; } },
+        waitUntil(value) { task = value; } });
+    await task;
+    assert.ok(closed);
+    assert.equal(opened, "https://chat.example/chat/1");
+    opened = undefined;
+    listeners.notificationclick({ notification: { data: { url: "https://evil.example/" }, close() {} },
+        waitUntil(value) { task = value; } });
+    await task;
+    assert.equal(opened, undefined, "notification clicks cannot open another origin");
+    console.log("PASS: PWA manifest, offline fallback, push notifications and safe notification clicks");
 })().catch(error => { console.error(error); process.exitCode = 1; });

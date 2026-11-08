@@ -12,6 +12,16 @@ Open the site over HTTPS in a supported browser and use its **Install app** or *
 
 The app requires a connection for sign-in and chat. Once the service worker has installed, opening the app offline displays a retry page; messages cannot be read or sent offline and there is no offline message queue. The service worker caches only that generic page, not account details, pictures, messages, or sign-in responses. Changes to the offline page require incrementing the cache version in `service-worker.js`.
 
+## Push notifications
+
+Configure Web Push before enabling it. Generate one persistent VAPID keypair and a separate send API secret with `node scripts/generate-vapid.cjs`. This stores them in the server project's .NET user secrets without printing them and refuses to replace existing push secrets. Also set `Push:Subject` to a contact URI, for example `dotnet user-secrets set --project src/PefiChat.Server "Push:Subject" "mailto:YOUR_CONTACT_EMAIL"`. User secrets are loaded only in Development. For Docker Compose or deployment, securely provision the same values as `Push__PublicKey`, `Push__PrivateKey`, `Push__Subject`, and `Push__SendSecret` using environment-specific secret storage; the private key and send secret must never be exposed to the client or committed. Use a real contact email or HTTPS URL for the subject. Preserve the keys across restarts and instances; replacing them invalidates existing browser subscriptions until each device visits the app again.
+
+Signed-in users can choose **Enable notifications** on each supported device and grant browser permission. On iOS/iPadOS, install the app to the Home Screen first. The browser refreshes its subscription when an already-permitted user returns. Subscriptions are stored in the existing Cosmos `users` container; saving a subscription for a different account on the same browser transfers that endpoint to the new account. Signing out alone does not disable a subscription; users can revoke notification permission in their browser or OS. Notifications contain a message preview, so take care on shared devices.
+
+Only the first direct message from each sender to each recipient triggers a notification, including when the recipient is online. Shared-room messages do not. Existing conversation history is respected; direction-specific markers and messages are saved atomically in the `messages` container. Delivery is best effort after the message is saved: failures are logged and are not retried. Expired subscriptions are removed. A click opens the corresponding direct conversation, including after sign-in. Web Push requires HTTPS (localhost is an exception) and a supported push provider. Subscription endpoints are limited to FCM, Mozilla, and Apple push hosts to prevent requests to arbitrary servers.
+
+The authenticated `/api/push/public-key` and `/api/push/subscribe` endpoints are used by the browser; subscription requires the signed-in user's antiforgery token. `/api/push/send` is a server-to-server administrative endpoint protected by `X-Push-Secret` (at least 32 characters); never send that secret to a browser. The chat service calls the same server-side delivery service directly instead of making an HTTP request to itself. Limit network access to the administrative endpoint where possible. See `src/PefiChat.Server/push.http` for request shapes.
+
 ## Run locally with Docker Compose
 
 Requires Docker and the Docker Compose plugin. For Microsoft sign-in, create a **separate development** Microsoft Entra app registration with a Web redirect URI of `http://localhost:8080/signin-microsoft`. Enable the account types you want to allow and create a client secret. Keep this registration separate from production.
@@ -66,7 +76,7 @@ dotnet run --project src/PefiChat.Server --launch-profile https
 Visit `https://localhost:7268`. A provider appears on the sign-in screen only when both of its credentials are configured. For deployment, supply the same configuration keys through a secret manager or environment variables such as `Authentication__Google__ClientId`. Configure HTTPS and protect ASP.NET Core data-protection keys appropriately for the hosting environment.
 
 Run client contract checks with `dotnet run --project tests/PefiChat.Client.Tests` and the chat behavior and SignalR integration checks with `dotnet run --project tests/PefiChat.Server.Tests`.
-Run the PWA manifest, icon and service worker checks with `node tests/PefiChat.Client.Tests/pwa-checks.cjs`.
+Run the PWA and push browser checks with `node tests/PefiChat.Client.Tests/pwa-checks.cjs` and `node tests/PefiChat.Client.Tests/push-checks.cjs`.
 To include the Cosmos round-trip check, run `COSMOS_TEST_ENDPOINT=https://YOUR_ACCOUNT.documents.azure.com:443/ dotnet run --project tests/PefiChat.Server.Tests` after `az login`. This writes and removes test records in `pefi-chat`.
 To include the Blob round-trip check, also set `BLOB_TEST_ENDPOINT=https://YOUR_STORAGE_ACCOUNT.blob.core.windows.net/profiles`; this writes and removes a test image.
 

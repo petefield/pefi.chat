@@ -51,6 +51,18 @@ internal sealed class InMemoryChatRepository : IChatRepository
         return Task.CompletedTask;
     }
 
+    public Task<bool> SaveDirectMessageAsync(string conversationId, ChatMessage message)
+    {
+        lock (gate)
+        {
+            if (!messages.TryGetValue(conversationId, out var history))
+                messages[conversationId] = history = [];
+            var first = !history.Any(previous => previous.SenderId == message.SenderId);
+            history.Add(message);
+            return Task.FromResult(first);
+        }
+    }
+
     public Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId)
     {
         lock (gate)

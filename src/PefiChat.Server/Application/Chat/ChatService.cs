@@ -1,6 +1,8 @@
+using PefiChat.Push;
+
 namespace PefiChat.Chat;
 
-public sealed class ChatService(IChatRepository repository, ILogger<ChatService> logger)
+public sealed class ChatService(IChatRepository repository, IPushService push, ILogger<ChatService> logger)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, (ChatUser User, Func<Task> Notify)> connections = [];
@@ -77,9 +79,28 @@ public sealed class ChatService(IChatRepository repository, ILogger<ChatService>
         if (recipientId is not null && (recipientId == sender.Id || !await repository.UserExistsAsync(recipientId)))
             return "That user could not be found.";
 
-        await repository.SaveMessageAsync(ConversationKey(sender.Id, recipientId),
-            new ChatMessage(sender.Id, sender.Name, text, DateTimeOffset.UtcNow));
+        var message = new ChatMessage(sender.Id, sender.Name, text, DateTimeOffset.UtcNow);
+        var conversation = ConversationKey(sender.Id, recipientId);
+        var firstContact = false;
+        if (recipientId is null)
+            await repository.SaveMessageAsync(conversation, message);
+        else
+            firstContact = await repository.SaveDirectMessageAsync(conversation, message);
         await NotifyAsync();
+        if (firstContact)
+        {
+            try
+            {
+                var name = (await repository.GetUserAsync(sender.Id))?.Name ?? sender.Name;
+                var preview = string.Concat(text.EnumerateRunes().Take(100).Select(rune => rune.ToString()));
+                await push.SendAsync(recipientId!, new PushPayload($"New message from {name}", preview,
+                    "/icon-512.png", $"new-sender-{sender.Id}", $"/chat/{Uri.EscapeDataString(sender.Id)}"), CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception, "Could not deliver first-contact push notification.");
+            }
+        }
         return null;
     }
 

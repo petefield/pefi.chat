@@ -18,6 +18,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="SkiaSharp" Version="4.155.0" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.155.0" />
+    <PackageReference Include="Lib.Net.Http.WebPush" Version="3.3.1" />
     <ProjectReference Include="../PefiChat.Client/PefiChat.Client.csproj" />
   </ItemGroup>
 

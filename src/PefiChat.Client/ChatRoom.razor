@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 @inject NavigationManager Navigation
 @inject ILogger<ChatRoom> Logger
+@inject Microsoft.JSInterop.IJSRuntime JS
 @using Microsoft.AspNetCore.Components.Forms
 
 <div class="chat-app">
@@ -27,6 +28,7 @@
                 <div><strong>@user.Name</strong><small>Signed in</small></div>
             </div>
             <button type="button" class="secondary" @onclick="OpenProfile">Edit profile</button>
+            <button type="button" class="secondary" @onclick="EnablePushAsync" disabled="@enablingPush">Enable notifications</button>
             }
             <form action="/logout" method="post">
                 <input type="hidden" name="__RequestVerificationToken" value="@LogoutToken" />
@@ -190,10 +192,15 @@ else if (error is null)
         }
     </div>
 }
+@if (pushStatus is not null)
+{
+    <div class="connection-error" role="status"><p>@pushStatus</p></div>
+}
 </div>
 
 @code {
     [Parameter] public string LogoutToken { get; set; } = "";
+    [Parameter] public string? SenderId { get; set; }
     private HubConnection? connection;
     private ChatUser? user;
     private IReadOnlyList<ChatContact> users = [];
@@ -215,6 +222,24 @@ else if (error is null)
     private string? profileError;
     private byte[]? profileImage;
     private bool pictureSelectionInvalid;
+    private bool enablingPush;
+    private string? pushStatus;
+
+    private async Task EnablePushAsync()
+    {
+        enablingPush = true;
+        try
+        {
+            var result = await JS.InvokeAsync<string>("pefiPush.subscribe", LogoutToken, true);
+            pushStatus = result == "subscribed" ? "Notifications enabled on this device." : result;
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not enable push notifications.");
+            pushStatus = "Could not enable notifications. Check browser permissions and try again.";
+        }
+        finally { enablingPush = false; }
+    }
 
     private void OpenProfile()
     {
@@ -278,6 +303,12 @@ else if (error is null)
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrEmpty(SenderId))
+        {
+            showDirectMessages = true;
+            selectedUserId = SenderId;
+            lastDirectUserId = SenderId;
+        }
         connection = new HubConnectionBuilder()
             .WithUrl(Navigation.ToAbsoluteUri("/chat-hub"))
             .WithAutomaticReconnect()
@@ -304,6 +335,15 @@ else if (error is null)
             StateHasChanged();
         });
         await ConnectAsync();
+        try
+        {
+            await JS.InvokeAsync<string>("pefiPush.subscribe", LogoutToken, false);
+        }
+        catch (Exception exception)
+        {
+            Logger.LogWarning(exception, "Could not refresh push subscription.");
+            pushStatus = "Could not refresh notifications on this device. Try enabling notifications again.";
+        }
     }
 
     private async Task ConnectAsync()

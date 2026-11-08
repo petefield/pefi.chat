@@ -106,11 +106,49 @@ public sealed class CosmosChatRepository(CosmosClient client, IConfiguration con
             message.SenderId, message.SenderName, message.Text, message.SentAt),
             new PartitionKey(conversationId));
 
+    public async Task<bool> SaveDirectMessageAsync(string conversationId, ChatMessage message)
+    {
+        var partition = new PartitionKey(conversationId);
+        var markerId = "sender:" + message.SenderId;
+        try
+        {
+            await messages.ReadItemAsync<SenderMarker>(markerId, partition);
+            await SaveMessageAsync(conversationId, message);
+            return false;
+        }
+        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Older conversations may have messages but no marker.
+        }
+
+        using var history = messages.GetItemQueryIterator<int>(
+            new QueryDefinition("SELECT VALUE COUNT(1) FROM c WHERE c.senderId = @sender")
+                .WithParameter("@sender", message.SenderId),
+            requestOptions: new QueryRequestOptions { PartitionKey = partition });
+        var previouslySent = false;
+        while (history.HasMoreResults)
+            previouslySent |= (await history.ReadNextAsync()).Any(count => count > 0);
+
+        var document = new MessageDocument(Guid.NewGuid().ToString("N"), conversationId,
+            message.SenderId, message.SenderName, message.Text, message.SentAt);
+        using var response = await messages.CreateTransactionalBatch(partition)
+            .CreateItem(new SenderMarker(markerId, conversationId))
+            .CreateItem(document)
+            .ExecuteAsync();
+        if (response.IsSuccessStatusCode) return !previouslySent;
+        if (response.StatusCode == HttpStatusCode.Conflict)
+        {
+            await SaveMessageAsync(conversationId, message);
+            return false;
+        }
+        throw new InvalidOperationException($"Could not save direct message: Cosmos returned {response.StatusCode}.");
+    }
+
     public async Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string conversationId)
     {
         var result = new List<ChatMessage>();
         using var iterator = messages.GetItemQueryIterator<MessageDocument>(
-            new QueryDefinition("SELECT * FROM c ORDER BY c.sentAt ASC"),
+            new QueryDefinition("SELECT * FROM c WHERE IS_DEFINED(c.sentAt) ORDER BY c.sentAt ASC"),
             requestOptions: new QueryRequestOptions { PartitionKey = new PartitionKey(conversationId) });
         while (iterator.HasMoreResults)
         {
@@ -139,4 +177,8 @@ public sealed class CosmosChatRepository(CosmosClient client, IConfiguration con
         [property: JsonProperty("senderName")] string SenderName,
         [property: JsonProperty("text")] string Text,
         [property: JsonProperty("sentAt")] DateTimeOffset SentAt);
+
+    private sealed record SenderMarker(
+        [property: JsonProperty("id")] string Id,
+        [property: JsonProperty("partitionKey")] string PartitionKey);
 }

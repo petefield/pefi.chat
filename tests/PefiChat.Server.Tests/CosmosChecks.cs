@@ -21,6 +21,7 @@ internal static class CosmosChecks
         var user = new ChatUser(id, "Persistence test");
         var message = new ChatMessage(id, user.Name, "Persistence test", DateTimeOffset.UtcNow);
         var conversation = "test-" + id;
+        var raceConversation = "test-race-" + id;
         var userContainer = client.GetContainer("pefi-chat", "users");
         var messageContainer = client.GetContainer("pefi-chat", "messages");
 
@@ -49,6 +50,16 @@ internal static class CosmosChecks
             var actual = (await reloaded.GetMessagesAsync(conversation)).Single();
             if (actual.Text != message.Text || actual.SenderId != id)
                 throw new Exception("Cosmos message round-trip failed.");
+            if (await repository.SaveDirectMessageAsync(conversation, message))
+                throw new Exception("Cosmos existing message history was treated as first contact.");
+            var other = message with { SenderId = secondId };
+            if (!await repository.SaveDirectMessageAsync(conversation, other) ||
+                await repository.SaveDirectMessageAsync(conversation, other))
+                throw new Exception("Cosmos directional first-contact detection failed.");
+            var results = await Task.WhenAll(Enumerable.Range(0, 10)
+                .Select(_ => repository.SaveDirectMessageAsync(raceConversation, message)));
+            if (results.Count(first => first) != 1 || (await repository.GetMessagesAsync(raceConversation)).Count != 10)
+                throw new Exception("Cosmos concurrent first-contact detection failed.");
             Console.WriteLine("PASS: Cosmos user and message round-trip survives repository recreation");
         }
         finally
@@ -61,6 +72,12 @@ internal static class CosmosChecks
                 foreach (var item in await iterator.ReadNextAsync())
                     await messageContainer.DeleteItemAsync<dynamic>((string)item.id, new PartitionKey(conversation));
             }
+            using var raceIterator = messageContainer.GetItemQueryIterator<dynamic>(
+                new QueryDefinition("SELECT c.id FROM c"),
+                requestOptions: new QueryRequestOptions { PartitionKey = new PartitionKey(raceConversation) });
+            while (raceIterator.HasMoreResults)
+                foreach (var item in await raceIterator.ReadNextAsync())
+                    await messageContainer.DeleteItemAsync<dynamic>((string)item.id, new PartitionKey(raceConversation));
             if (await repository.UserExistsAsync(id))
                 await userContainer.DeleteItemAsync<dynamic>(id, new PartitionKey("users"));
             if (await repository.UserExistsAsync(secondId))

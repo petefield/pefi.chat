@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-CSRF-TOKEN");
 builder.Services.AddSignalR(options => options.MaximumReceiveMessageSize = 768 * 1024);
 builder.Services.AddChatAuthentication(builder.Configuration);
 builder.Services.AddChatInfrastructure();
@@ -33,6 +34,7 @@ app.UseAntiforgery();
 
 app.MapAuthenticationEndpoints();
 app.MapProfilePictureEndpoints();
+app.MapPushEndpoints();
 app.MapStaticAssets();
 app.MapHub<ChatHub>("/chat-hub");
 
