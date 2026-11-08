@@ -3,8 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
+using PefiChat.Chat;
 
-namespace PefiChat.Chat;
+namespace PefiChat.Infrastructure.Chat;
 
 public sealed class CosmosChatRepository(CosmosClient client, IConfiguration configuration) : IChatRepository
 {

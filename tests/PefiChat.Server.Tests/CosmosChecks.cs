@@ -2,6 +2,7 @@ using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using PefiChat.Chat;
+using PefiChat.Infrastructure.Chat;
 
 internal static class CosmosChecks
 {

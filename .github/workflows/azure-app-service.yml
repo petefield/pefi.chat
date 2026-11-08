@@ -27,6 +27,9 @@ jobs:
       - name: Run client checks
         run: dotnet run --project tests/PefiChat.Client.Tests/PefiChat.Client.Tests.csproj --configuration Release
 
+      - name: Run PWA checks
+        run: node tests/PefiChat.Client.Tests/pwa-checks.cjs
+
       - name: Run server and SignalR checks
         run: dotnet run --project tests/PefiChat.Server.Tests/PefiChat.Server.Tests.csproj --configuration Release
 

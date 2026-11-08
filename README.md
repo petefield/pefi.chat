@@ -4,6 +4,14 @@ A small chat with a Blazor WebAssembly client, a .NET server, a shared room, and
 
 The application projects are in `src/PefiChat.Client` and `src/PefiChat.Server`; their checks are in `tests/PefiChat.Client.Tests` and `tests/PefiChat.Server.Tests`. Run `dotnet build` from the repository root to build the solution.
 
+The server's `Program.cs` wires up the app. `Application` contains chat and profile services and their storage contracts; `Infrastructure` implements those contracts with Cosmos DB and Blob Storage. `Authentication`, `Endpoints`, and `Realtime` handle sign-in, HTTP routes, and SignalR respectively. Razor components are in `Components`.
+
+## Install as an app
+
+Open the site over HTTPS in a supported browser and use its **Install app** or **Add to Home Screen** option. On iPhone or iPad, use Safari's Share menu and choose **Add to Home Screen**. Browser support and install prompts vary. `http://localhost:8080` is also treated as a secure origin for local testing.
+
+The app requires a connection for sign-in and chat. Once the service worker has installed, opening the app offline displays a retry page; messages cannot be read or sent offline and there is no offline message queue. The service worker caches only that generic page, not account details, pictures, messages, or sign-in responses. Changes to the offline page require incrementing the cache version in `service-worker.js`.
+
 ## Run locally with Docker Compose
 
 Requires Docker and the Docker Compose plugin. For Microsoft sign-in, create a **separate development** Microsoft Entra app registration with a Web redirect URI of `http://localhost:8080/signin-microsoft`. Enable the account types you want to allow and create a client secret. Keep this registration separate from production.
@@ -58,6 +66,7 @@ dotnet run --project src/PefiChat.Server --launch-profile https
 Visit `https://localhost:7268`. A provider appears on the sign-in screen only when both of its credentials are configured. For deployment, supply the same configuration keys through a secret manager or environment variables such as `Authentication__Google__ClientId`. Configure HTTPS and protect ASP.NET Core data-protection keys appropriately for the hosting environment.
 
 Run client contract checks with `dotnet run --project tests/PefiChat.Client.Tests` and the chat behavior and SignalR integration checks with `dotnet run --project tests/PefiChat.Server.Tests`.
+Run the PWA manifest, icon and service worker checks with `node tests/PefiChat.Client.Tests/pwa-checks.cjs`.
 To include the Cosmos round-trip check, run `COSMOS_TEST_ENDPOINT=https://YOUR_ACCOUNT.documents.azure.com:443/ dotnet run --project tests/PefiChat.Server.Tests` after `az login`. This writes and removes test records in `pefi-chat`.
 To include the Blob round-trip check, also set `BLOB_TEST_ENDPOINT=https://YOUR_STORAGE_ACCOUNT.blob.core.windows.net/profiles`; this writes and removes a test image.
 

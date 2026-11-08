@@ -2,6 +2,7 @@ using Azure.Identity;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Logging.Abstractions;
 using PefiChat.Chat;
+using PefiChat.Infrastructure.Profiles;
 using SkiaSharp;
 
 internal static class BlobChecks
@@ -9,7 +10,7 @@ internal static class BlobChecks
     public static async Task RunAsync(string endpoint)
     {
         var container = new BlobContainerClient(new Uri(endpoint), new AzureCliCredential());
-        var pictures = new ProfilePictures(container, NullLogger<ProfilePictures>.Instance);
+        var pictures = new BlobProfilePictureStore(container, NullLogger<BlobProfilePictureStore>.Instance);
         using var bitmap = new SKBitmap(300, 150);
         using var image = SKImage.FromBitmap(bitmap);
         using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);

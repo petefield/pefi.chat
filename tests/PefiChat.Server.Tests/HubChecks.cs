@@ -12,6 +12,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PefiChat.Chat;
 using Azure.Storage.Blobs;
+using PefiChat.Infrastructure.Profiles;
+using PefiChat.Profiles;
+using PefiChat.Realtime;
 
 internal static class HubChecks
 {
@@ -24,9 +27,10 @@ internal static class HubChecks
         builder.Services.AddAuthorization();
         builder.Services.AddSignalR();
         builder.Services.AddSingleton<IChatRepository, InMemoryChatRepository>();
-        builder.Services.AddSingleton<ChatStore>();
+        builder.Services.AddSingleton<ChatService>();
         builder.Services.AddSingleton(new BlobContainerClient(new Uri("http://127.0.0.1:10000/profiles")));
-        builder.Services.AddSingleton<ProfilePictures>();
+        builder.Services.AddSingleton<IProfilePictureStore, BlobProfilePictureStore>();
+        builder.Services.AddSingleton<ProfileService>();
         await using var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();

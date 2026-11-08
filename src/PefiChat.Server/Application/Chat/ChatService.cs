@@ -1,6 +1,6 @@
 namespace PefiChat.Chat;
 
-public sealed class ChatStore(IChatRepository repository, ILogger<ChatStore> logger)
+public sealed class ChatService(IChatRepository repository, ILogger<ChatService> logger)
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, (ChatUser User, Func<Task> Notify)> connections = [];
@@ -28,7 +28,7 @@ public sealed class ChatStore(IChatRepository repository, ILogger<ChatStore> log
         }
     }
 
-    public async Task<IReadOnlyList<ChatContact>> UsersAsync(string excludingUserId)
+    public async Task<IReadOnlyList<ChatContact>> GetUsersAsync(string excludingUserId)
     {
         var users = await repository.GetUsersAsync();
         HashSet<string> online;
@@ -43,7 +43,7 @@ public sealed class ChatStore(IChatRepository repository, ILogger<ChatStore> log
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<ChatMessage>> MessagesAsync(string userId, string? otherUserId)
+    public async Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(string userId, string? otherUserId)
     {
         var messages = await repository.GetMessagesAsync(ConversationKey(userId, otherUserId));
         var users = (await repository.GetUsersAsync()).ToDictionary(user => user.Id);
@@ -58,7 +58,7 @@ public sealed class ChatStore(IChatRepository repository, ILogger<ChatStore> log
 
     public Task ProfileChangedAsync() => NotifyAsync();
 
-    public async Task<string?> SendAsync(ChatUser sender, string? recipientId, string? text)
+    public async Task<string?> SendMessageAsync(ChatUser sender, string? recipientId, string? text)
     {
         text = text?.Trim();
         if (string.IsNullOrEmpty(text) || text.Length > ChatLimits.MaximumMessageLength)

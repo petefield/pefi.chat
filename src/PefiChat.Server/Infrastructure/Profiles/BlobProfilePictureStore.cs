@@ -2,10 +2,12 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using SkiaSharp;
+using PefiChat.Chat;
+using PefiChat.Profiles;
 
-namespace PefiChat.Chat;
+namespace PefiChat.Infrastructure.Profiles;
 
-public sealed class ProfilePictures(BlobContainerClient container, ILogger<ProfilePictures> logger)
+public sealed class BlobProfilePictureStore(BlobContainerClient container, ILogger<BlobProfilePictureStore> logger) : IProfilePictureStore
 {
     public async Task<(string? Name, string? Error)> UploadAsync(byte[] bytes, CancellationToken cancellationToken)
     {
